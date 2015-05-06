@@ -37,7 +37,9 @@ Usage
 `./tcp_full_proxy {-v} -l <local port> -h <host> -p <remote port>`
 
 `-v` Output is verbose (Optional).
-
+`-l` Local port that the programs listens and accepts connections to be proxied.
+`-h` Remote Host that accepted connections will be proxied to.
+`-p` Remote Port on Remote Host.
 
 Legal Stuff
 ===========
