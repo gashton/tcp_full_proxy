@@ -1,31 +1,31 @@
 /*-
- * TCP Full Proxy
- *
- * Copyright 2015 Grant Ashton
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
- */
- 
+* TCP Full Proxy
+*
+* Copyright 2015 Grant Ashton
+* All rights reserved.
+*
+* Redistribution and use in source and binary forms, with or without
+* modification, are permitted provided that the following conditions
+* are met:
+* 1. Redistributions of source code must retain the above copyright
+*    notice, this list of conditions and the following disclaimer.
+* 2. Redistributions in binary form must reproduce the above copyright
+*    notice, this list of conditions and the following disclaimer in the
+*    documentation and/or other materials provided with the distribution.
+*
+* THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+* ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+* IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+* ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+* FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+* DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+* OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+* HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+* LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+* OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+* SUCH DAMAGE.
+*/
+
 #include "proxy.h"
 
 void sig_handler(int signal)
@@ -35,54 +35,70 @@ void sig_handler(int signal)
 
 int main(int argc, char *argv[])
 {
-	int error = 0;
-	char* serverName;
-	
 	SHUTDOWN = 0;
+	char* serverName;
+	int i, localPortSupplied = 0, remotePortSupplied = 0, hostSupplied = 0;
 
 	signal(SIGINT, sig_handler);
 
-	//If invalid number of arguments are supplied, error.
-	if(argc < 4 || argc > 5)
+	for(i=1;i<argc;i++)
+	{
+		if(strcmp(argv[i],"-v") == 0)
+		{
+			VERBOSE = 1;
+		}
+		else if(strcmp(argv[i],"-l") == 0)
+		{
+			localPortSupplied = 1;
+			localPort = (ushort) atoi(argv[i+1]) & 0xFFFF;
+		}
+		else if(strcmp(argv[i],"-h") == 0)
+		{
+			hostSupplied = 1;
+			serverName = argv[i+1];
+		}
+		else if(strcmp(argv[i],"-p") == 0)
+		{
+			remotePortSupplied = 1;
+			remotePort = (ushort) atoi(argv[i+1]) & 0xFFFF;
+		}
+	}
+
+	if(!localPortSupplied || !remotePortSupplied || !hostSupplied)
 	{
 		printf("TCP Full Proxy - (C) 2015 Grant Ashton\n");
-		error = 1;
+
+		if(!localPortSupplied)
+		{
+			printf("Please specify the local port to listen on.\n");
+		}
+		if(!hostSupplied)
+		{
+			printf("Please specify the host to proxy to.\n");
+		}
+		if(!remotePortSupplied)
+		{
+			printf("Please specify the remote port to proxy to.\n");
+		}
+
+		usage(argv[0]);
+		return 1;
 	}
-	
-	//Check if verbose mode is specified.
-	if(strcmp(argv[1],"-v") == 0)
-	{
-		VERBOSE = 1;
-		serverName = argv[2];
-		localPort = (ushort) atoi(argv[3]) & 0xFFFF;
-		remotePort = (ushort) atoi(argv[4]) & 0xFFFF;
-	}
-	else
-	{
-		VERBOSE = 0;
-		serverName = argv[1];
-		localPort = (ushort) atoi(argv[2]) & 0xFFFF;
-		remotePort = (ushort) atoi(argv[3]) & 0xFFFF;
-	}
-	
-     struct addrinfo hints;
-	 memset(&hints, 0, sizeof(hints));
-	 hints.ai_socktype = SOCK_STREAM;
-	 hints.ai_family = AF_INET;
-	
+
+	struct addrinfo hints;
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_family = AF_INET;
+
 	//Resolve supplied hostname/ip to IPv4 address.
 	if(getaddrinfo(serverName, NULL, &hints, &serverHost) != 0)
 	{
 		printf("Invalid IP or Hostname.\n");
-		error = 1;
-	}
-	
-	if(error)
-	{
-		printf("Usage: %s {-v} <ip of server> <local port> <remote port>\n",argv[0]);
+		usage(argv[0]);
 		return 1;
 	}
 
+	//Start listener.
 	listener();
 
 	return 0;
@@ -92,10 +108,10 @@ void listener()
 {
 	int listenfd = 0, clientfd = 0, serverfd = 0, maxfd = 0, nbytes = 0, wbytes = 0, i = 0, j = 0, retval = 0, port = 0, yes = 1;
 	struct sockaddr_in serv_addr;
-	
+
 	char recvBuff[1024];
 	memset(&serv_addr, '0', sizeof(serv_addr));
-	
+
 	listenfd = socket(AF_INET, SOCK_STREAM, 0);
 
 	serv_addr.sin_family = AF_INET;
@@ -128,7 +144,7 @@ void listener()
 
 	//listenfd is highest fd to start with.
 	maxfd = listenfd;
-	
+
 	//Connections array to store active connections.
 	connection connections[MAX_CONNECTIONS];
 
@@ -339,7 +355,7 @@ void listener()
 			close(connections[i].serverfd);
 		}
 	}
-	
+
 	freeaddrinfo(serverHost);
 
 	printf("Proxy Stopped Listening\nGoodbye\n");
@@ -371,4 +387,9 @@ int server_connect(struct addrinfo *host, int port)
 	connect(serverfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
 
 	return serverfd;
+}
+
+void usage(char* programName)
+{
+	printf("Usage: %s {-v} -l <local port> -h <host> -p <remote port>\n", programName);
 }

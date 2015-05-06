@@ -3,7 +3,7 @@ TCP Full Proxy
 
 This is a simple TCP Full Proxy written in C.
 
-The program listens and accepts connections on the specified `<local port>`, for each new connection the program creates a separate connection to the `<ip of server>` on port `<remote port>` and proxies the TCP data between them.
+The program listens and accepts connections on the specified `<local port>`, for each new connection the program creates a separate connection to the `<host>` on port `<remote port>` and proxies the TCP data between them.
 
 Authors
 -------
@@ -34,9 +34,9 @@ Unix
 Usage
 =================
 
-`./proxy {-v} <ip of server> <local port> <remote port>`
+`./tcp_full_proxy {-v} -l <local port> -h <host> -p <remote port>`
 
-`-v` Output is verbose.
+`-v` Output is verbose (Optional).
 
 
 Legal Stuff
