@@ -106,7 +106,7 @@ int main(int argc, char *argv[])
 
 void listener()
 {
-	int listenfd = 0, clientfd = 0, serverfd = 0, maxfd = 0, i = 0, j = 0, retval = 0, yes = 1;
+	int listenfd = 0, clientfd = 0, serverfd = 0, maxfd = 0, i = 0, j = 0, nrfd = 0, nwfd = 0, yes = 1;
 	struct sockaddr_in serv_addr;
 
 	memset(&serv_addr, '0', sizeof(serv_addr));
@@ -167,14 +167,14 @@ void listener()
 		timeout.tv_usec = 0;
 
 		//Blocks until a file descriptor is ready to be read or timeout is reached.
-		retval = select(maxfd+1, &read_fds, NULL, NULL, &timeout);
+		nrfd = select(maxfd+1, &read_fds, NULL, NULL, &timeout);
 
-		if(retval == -1)
+		if(nrfd == -1)
 		{
 			if(VERBOSE) printf("Listener: Error waiting for client/server i/o. (Interrupted?)\n");
 			break;
 		}
-		else if(retval > 0)
+		else if(nrfd > 0)
 		{
 			//If we have a new connection.
 			if(FD_ISSET(listenfd, &read_fds))
@@ -239,7 +239,7 @@ void listener()
 				}
 			}
 
-			for(i = 0; i < MAX_CONNECTIONS; i++)
+			for(i = 0; i < nrfd; i++)
 			{
 				//Ensure file descriptors are defined for both server and client.
 				if(connections[i].serverfd != -1 && connections[i].clientfd != -1)
@@ -249,9 +249,9 @@ void listener()
 					timeout.tv_usec = 0;
 
 					//Check there are file descriptors ready to be written to.
-					retval = select(maxfd+1, NULL, &write_fds, NULL, &timeout);
+					nwfd = select(maxfd+1, NULL, &write_fds, NULL, &timeout);
 
-					if(retval > 0)
+					if(nwfd > 0)
 					{
 						//Check if serverfd is ready to be written to and clientfd is ready to be ready from.
 						if(FD_ISSET(connections[i].serverfd, &write_fds) && FD_ISSET(connections[i].clientfd, &read_fds))
@@ -345,7 +345,7 @@ void proxy_data(connection con, fd_set* master, int isServerToClient)
 		destfd = con.serverfd;
 	}
 
-	if(VERBOSE) printf("Listener: Attempting to read bytes (Sourcefd:%i, Destfd: %i)\n", sourcefd, destfd);
+	if(VERBOSE) printf("Attempting to read bytes (Sourcefd:%i, Destfd: %i)\n", sourcefd, destfd);
 	nbytes = read(sourcefd, recvBuff, sizeof(recvBuff));
 
 	if(nbytes == -1)
@@ -368,26 +368,43 @@ void proxy_data(connection con, fd_set* master, int isServerToClient)
 	}
 	else
 	{
-		if(VERBOSE) printf("Server closed connection.\n");
+		if(isServerToClient)
+		{
+			if(VERBOSE) printf("Server closed connection.\n");
+		}
+		else
+		{
+			if(VERBOSE) printf("Client closed connection.\n");
+		}
+		
 		wbytes = 0;
 	}
 
 	if(wbytes <= 0)
 	{
-		if(VERBOSE) printf("Client Read error (Possibly reset connection?)\n");
+		if(isServerToClient)
+		{
+			if(VERBOSE) printf("Client Read error (Possibly reset connection?)\n");
+		}
+		else
+		{
+			if(VERBOSE) printf("Server Read error (Possibly reset connection?)\n");
+		}
 	}
 
 	//Check for client or server errors.
 	if(nbytes <= 0 || wbytes <= 0)
 	{
-		//Shutdown connections.
-		shutdown(con.clientfd, 2);
-		close(con.clientfd);
-		shutdown(con.serverfd, 2);
-		close(con.serverfd);
+		if(VERBOSE) printf("Closing connections (Sourcefd:%i, Destfd: %i)\n", sourcefd, destfd);
 
-		FD_CLR(con.clientfd, master);
-		FD_CLR(con.serverfd, master);
+		//Shutdown connections.
+		shutdown(sourcefd, 2);
+		close(sourcefd);
+		shutdown(destfd, 2);
+		close(destfd);
+
+		FD_CLR(sourcefd, master);
+		FD_CLR(destfd, master);
 
 		con.clientfd = -1;
 		con.serverfd = -1;
