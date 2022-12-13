@@ -43,8 +43,14 @@
 #include <signal.h>
 #include <netdb.h>
 
+typedef struct connection {
+	int clientfd;
+	int serverfd;
+} connection;
+
 void sig_handler(int);
 void listener();
+void proxy_data(connection, fd_set*, int);
 int server_connect();
 void usage(char*);
 
@@ -56,10 +62,5 @@ short localPort;
 short remotePort;
 
 #define MAX_CONNECTIONS 50
-
-typedef struct {
-	int clientfd;
-	int serverfd;
-} connection;
 
 #endif

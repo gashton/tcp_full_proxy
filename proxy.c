@@ -106,10 +106,9 @@ int main(int argc, char *argv[])
 
 void listener()
 {
-	int listenfd = 0, clientfd = 0, serverfd = 0, maxfd = 0, nbytes = 0, wbytes = 0, i = 0, j = 0, retval = 0, port = 0, yes = 1;
+	int listenfd = 0, clientfd = 0, serverfd = 0, maxfd = 0, i = 0, j = 0, retval = 0, yes = 1;
 	struct sockaddr_in serv_addr;
 
-	char recvBuff[1024];
 	memset(&serv_addr, '0', sizeof(serv_addr));
 
 	listenfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -130,8 +129,6 @@ void listener()
 
 	//Select() timeout.
 	struct timeval timeout;
-	timeout.tv_sec = 1;
-	timeout.tv_usec = 0;
 
 	//fd_set containing socket listener file descriptor
 	//read_fds will be actively used and cleared when calling select()
@@ -161,11 +158,16 @@ void listener()
 
 	while(!SHUTDOWN)
 	{
+		//Reset fds.
 		read_fds = master;
 		write_fds = master;
 
-		//Blocks until a file descriptor is ready to be read or written, or timeout is reached.
-		retval = select(maxfd+1, &read_fds, &write_fds, NULL, &timeout);
+		//Reset timeout.
+		timeout.tv_sec = 1;
+		timeout.tv_usec = 0;
+
+		//Blocks until a file descriptor is ready to be read or timeout is reached.
+		retval = select(maxfd+1, &read_fds, NULL, NULL, &timeout);
 
 		if(retval == -1)
 		{
@@ -185,11 +187,9 @@ void listener()
 					//Get IP Address of peer.
 					if (addr.ss_family == AF_INET) {
 						struct sockaddr_in *s = (struct sockaddr_in *)&addr;
-						port = ntohs(s->sin_port);
 						inet_ntop(AF_INET, &s->sin_addr, ipstr, sizeof ipstr);
 					} else { // AF_INET6
 						struct sockaddr_in6 *s = (struct sockaddr_in6 *)&addr;
-						port = ntohs(s->sin6_port);
 						inet_ntop(AF_INET6, &s->sin6_addr, ipstr, sizeof ipstr);
 					}
 
@@ -244,89 +244,27 @@ void listener()
 				//Ensure file descriptors are defined for both server and client.
 				if(connections[i].serverfd != -1 && connections[i].clientfd != -1)
 				{
-					//Received something from a server connection.
-					if(FD_ISSET(connections[i].serverfd, &read_fds) && FD_ISSET(connections[i].clientfd, &write_fds))
-					{ 
-						if(VERBOSE) printf("Listener: Attempting to read server bytes for ClientFD: %i and ServerFD: %i\n",connections[i].clientfd,connections[i].serverfd);
-						nbytes = read(connections[i].serverfd, recvBuff, sizeof(recvBuff));
+					//Reset timeout.
+					timeout.tv_sec = 1;
+					timeout.tv_usec = 0;
 
-						if(nbytes == -1)
-						{
-							if(VERBOSE) printf("Server Read error (Possibly reset connection?)\n");
-						}
-						else if(nbytes > 0)
-						{
-							wbytes = write(connections[i].clientfd, recvBuff, nbytes);
-							if(VERBOSE) printf("S-C: Proxied %i bytes\n", nbytes);
-						}
-						else
-						{
-							if(VERBOSE) printf("Server closed connection.\n");
-							wbytes = 0;
-						}
+					//Check there are file descriptors ready to be written to.
+					retval = select(maxfd+1, NULL, &write_fds, NULL, &timeout);
 
-						if(wbytes <= 0)
-						{
-							if(VERBOSE) printf("Client Read error (Possibly reset connection?)\n");
-						}
-
-						//Check for client or server errors.
-						if(nbytes <= 0 || wbytes <= 0)
-						{
-							//Shutdown connections.
-							shutdown(connections[i].serverfd, 2);
-							close(connections[i].serverfd);
-							shutdown(connections[i].clientfd, 2);
-							close(connections[i].clientfd);
-
-							FD_CLR(connections[i].clientfd, &master);
-							FD_CLR(connections[i].serverfd, &master);
-
-							connections[i].clientfd = -1;
-							connections[i].serverfd = -1;
-						}
-					}
-
-					//Received something from a client connection.
-					if(FD_ISSET(connections[i].clientfd, &read_fds) && FD_ISSET(connections[i].serverfd, &write_fds))
+					if(retval > 0)
 					{
-						if(VERBOSE) printf("Listener: Attempting to read client bytes for ClientFD: %i and ServerFD: %i\n",connections[i].clientfd,connections[i].serverfd);
-						nbytes = read(connections[i].clientfd, recvBuff, sizeof(recvBuff));
-
-						if(nbytes == -1)
-						{
-							if(VERBOSE) printf("Client Read error (Possibly reset connection?)\n");
-						}
-						else if(nbytes > 0)
-						{
-							wbytes = write(connections[i].serverfd, recvBuff, nbytes);
-							if(VERBOSE) printf("C-S: Proxied %i bytes\n", nbytes);
-						}
-						else
-						{
-							if(VERBOSE) printf("Client closed connection.\n");
-							wbytes = 0;
+						//Check if serverfd is ready to be written to and clientfd is ready to be ready from.
+						if(FD_ISSET(connections[i].serverfd, &write_fds) && FD_ISSET(connections[i].clientfd, &read_fds))
+						{ 
+							//Client to Server
+							proxy_data(connections[i], &master, 0);
 						}
 
-						if(wbytes <= 0)
-						{
-							if(VERBOSE) printf("Server Read error (Possibly reset connection?)\n");
-						}
-
-						//Check for client or server errors.
-						if(wbytes <= 0 || nbytes <= 0)
-						{
-							//Shutdown connections.
-							shutdown(connections[i].clientfd, 2);
-							close(connections[i].clientfd);
-							shutdown(connections[i].serverfd, 2);
-							close(connections[i].serverfd);
-
-							FD_CLR(connections[i].clientfd, &master);
-							FD_CLR(connections[i].serverfd, &master);
-
-							connections[i].clientfd = -1;
-							connections[i].serverfd = -1;
+						//Check if clientfd is ready to be written to and serverfd is ready to be ready from.
+						if(FD_ISSET(connections[i].clientfd, &write_fds) && FD_ISSET(connections[i].serverfd, &read_fds))
+						{ 
+							//Server to Client
+							proxy_data(connections[i], &master, 1);
 						}
 					}
 				}
@@ -387,6 +325,73 @@ int server_connect(struct addrinfo *host, int port)
 	connect(serverfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
 
 	return serverfd;
+}
+
+void proxy_data(connection con, fd_set* master, int isServerToClient)
+{
+	int sourcefd, destfd, nbytes, wbytes;
+	char recvBuff[65536];
+
+	//Server to Client
+	if(isServerToClient)
+	{
+		sourcefd = con.serverfd;
+		destfd = con.clientfd;
+	}
+	//Client to Server
+	else
+	{
+		sourcefd = con.clientfd;
+		destfd = con.serverfd;
+	}
+
+	if(VERBOSE) printf("Listener: Attempting to read bytes (Sourcefd:%i, Destfd: %i)\n", sourcefd, destfd);
+	nbytes = read(sourcefd, recvBuff, sizeof(recvBuff));
+
+	if(nbytes == -1)
+	{
+		if(VERBOSE) printf("Server Read error (Possibly reset connection?)\n");
+	}
+	else if(nbytes > 0)
+	{
+		wbytes = write(destfd, recvBuff, nbytes);
+
+		if(isServerToClient)
+		{
+			if(VERBOSE) printf("S-C: Proxied %i bytes\n", nbytes);
+		}
+		else
+		{
+			if(VERBOSE) printf("C-S: Proxied %i bytes\n", nbytes);
+		}
+
+	}
+	else
+	{
+		if(VERBOSE) printf("Server closed connection.\n");
+		wbytes = 0;
+	}
+
+	if(wbytes <= 0)
+	{
+		if(VERBOSE) printf("Client Read error (Possibly reset connection?)\n");
+	}
+
+	//Check for client or server errors.
+	if(nbytes <= 0 || wbytes <= 0)
+	{
+		//Shutdown connections.
+		shutdown(con.clientfd, 2);
+		close(con.clientfd);
+		shutdown(con.serverfd, 2);
+		close(con.serverfd);
+
+		FD_CLR(con.clientfd, master);
+		FD_CLR(con.serverfd, master);
+
+		con.clientfd = -1;
+		con.serverfd = -1;
+	}
 }
 
 void usage(char* programName)
