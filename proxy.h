@@ -43,14 +43,14 @@
 #include <signal.h>
 #include <netdb.h>
 
-typedef struct connection {
+typedef struct {
 	int clientfd;
 	int serverfd;
 } connection;
 
 void sig_handler(int);
 void listener();
-void proxy_data(connection, fd_set*, int);
+void proxy_data(connection*, fd_set*, int);
 int server_connect();
 void usage(char*);
 

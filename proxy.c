@@ -257,14 +257,14 @@ void listener()
 						if(FD_ISSET(connections[i].serverfd, &write_fds) && FD_ISSET(connections[i].clientfd, &read_fds))
 						{ 
 							//Client to Server
-							proxy_data(connections[i], &master, 0);
+							proxy_data(&connections[i], &master, 0);
 						}
 
 						//Check if clientfd is ready to be written to and serverfd is ready to be ready from.
 						if(FD_ISSET(connections[i].clientfd, &write_fds) && FD_ISSET(connections[i].serverfd, &read_fds))
 						{ 
 							//Server to Client
-							proxy_data(connections[i], &master, 1);
+							proxy_data(&connections[i], &master, 1);
 						}
 					}
 				}
@@ -327,7 +327,7 @@ int server_connect(struct addrinfo *host, int port)
 	return serverfd;
 }
 
-void proxy_data(connection con, fd_set* master, int isServerToClient)
+void proxy_data(connection *con, fd_set* master, int isServerToClient)
 {
 	int sourcefd, destfd, nbytes, wbytes;
 	char recvBuff[65536];
@@ -335,14 +335,14 @@ void proxy_data(connection con, fd_set* master, int isServerToClient)
 	//Server to Client
 	if(isServerToClient)
 	{
-		sourcefd = con.serverfd;
-		destfd = con.clientfd;
+		sourcefd = con->serverfd;
+		destfd = con->clientfd;
 	}
 	//Client to Server
 	else
 	{
-		sourcefd = con.clientfd;
-		destfd = con.serverfd;
+		sourcefd = con->clientfd;
+		destfd = con->serverfd;
 	}
 
 	if(VERBOSE) printf("Attempting to read bytes (Sourcefd:%i, Destfd: %i)\n", sourcefd, destfd);
@@ -406,8 +406,8 @@ void proxy_data(connection con, fd_set* master, int isServerToClient)
 		FD_CLR(sourcefd, master);
 		FD_CLR(destfd, master);
 
-		con.clientfd = -1;
-		con.serverfd = -1;
+		con->clientfd = -1;
+		con->serverfd = -1;
 	}
 }
 
