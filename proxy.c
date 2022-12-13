@@ -169,7 +169,7 @@ void listener()
 		//Blocks until a file descriptor is ready to be read or timeout is reached.
 		nrfd = select(maxfd+1, &read_fds, NULL, NULL, &timeout);
 
-		if(nrfd == -1)
+		if(nrfd < 0)
 		{
 			if(VERBOSE) printf("Listener: Error waiting for client/server i/o. (Interrupted?)\n");
 			break;
@@ -200,24 +200,24 @@ void listener()
 
 					if(serverfd != -1)
 					{
-						//Update max file descriptor
-						if(clientfd > maxfd)
-						{
-							maxfd = clientfd;
-						}
-						if(serverfd > maxfd)
-						{
-							maxfd = serverfd;
-						}
-
 						//Find free connections element and store file descriptors.
 						for(j=0;j<MAX_CONNECTIONS;j++)
 						{
-							if(connections[j].clientfd == -1 || connections[j].serverfd == -1)
+							if(connections[j].clientfd == -1 && connections[j].serverfd == -1)
 							{
 								if(VERBOSE) printf("Listener: Adding ClientFD: %i and ServerFD: %i to master\n",clientfd,serverfd);
 								connections[j].clientfd = clientfd;
 								connections[j].serverfd = serverfd;
+								
+								//Update max file descriptor.
+								if(clientfd > maxfd)
+								{
+									maxfd = clientfd;
+								}
+								if(serverfd > maxfd)
+								{
+									maxfd = serverfd;
+								}
 
 								//Add new connection fd to master set
 								FD_SET(clientfd, &master);
@@ -230,6 +230,7 @@ void listener()
 					{
 						shutdown(clientfd, 2);
 						close(clientfd);
+						
 						if(VERBOSE) printf("Listener: Server connection failed, so client connection has been closed. \n");
 					}
 				}
@@ -350,7 +351,14 @@ void proxy_data(connection *con, fd_set* master, int isServerToClient)
 
 	if(nbytes == -1)
 	{
-		if(VERBOSE) printf("Server Read error (Possibly reset connection?)\n");
+		if(isServerToClient)
+		{
+			if(VERBOSE) printf("Server Read error (Possibly reset connection?)\n");
+		}
+		else
+		{
+			if(VERBOSE) printf("Client Read error (Possibly reset connection?)\n");
+		}
 	}
 	else if(nbytes > 0)
 	{
@@ -380,15 +388,16 @@ void proxy_data(connection *con, fd_set* master, int isServerToClient)
 		wbytes = 0;
 	}
 
-	if(wbytes <= 0)
+	//If failed to write any bytes, and there were bytes read that needed writing.
+	if(wbytes <= 0 && nbytes > 0)
 	{
 		if(isServerToClient)
 		{
-			if(VERBOSE) printf("Client Read error (Possibly reset connection?)\n");
+			if(VERBOSE) printf("Client Write error (Possibly reset connection?)\n");
 		}
 		else
 		{
-			if(VERBOSE) printf("Server Read error (Possibly reset connection?)\n");
+			if(VERBOSE) printf("Server Write error (Possibly reset connection?)\n");
 		}
 	}
 
